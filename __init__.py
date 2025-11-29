@@ -454,6 +454,12 @@ class SADAAcceleratorNode:
     CATEGORY = "SADA"
     DESCRIPTION = "SADA稳定性引导自适应扩散加速器 - 通过智能跳过冗余步骤提升生成速度"
 
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        # 返回 float("NaN") 确保每次运行工作流时都会重新执行此节点
+        # 从而触发内部的自动刷新计数器
+        return float("NaN")
+
     def apply_sada_acceleration(self, model, skip_ratio, acc_start, acc_end, early_exit_threshold, stability_threshold, enable_acceleration=True, force_refresh=0):
         """应用SADA加速"""
         if not enable_acceleration:
