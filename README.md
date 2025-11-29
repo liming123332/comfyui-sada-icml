@@ -34,7 +34,7 @@ SADA (Stability-guided Adaptive Diffusion Acceleration) 通过智能跳过冗余
 
 ## 📦 安装
 
-### 方法一: ComfyUI Manager (推荐)
+### 方法一: ComfyUI Manager (暂时不支持)请使用方法二
 1. 打开ComfyUI Manager
 2. 搜索 "ComfyUI-SADA-ICML"
 3. 点击安装并重启ComfyUI
