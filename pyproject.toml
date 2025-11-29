@@ -1,0 +1,50 @@
+[project]
+name = "comfyui-sada-icml"
+version = "1.0.0"
+description = "SADA: Stability-guided Adaptive Diffusion Acceleration for ComfyUI"
+authors = [
+    {name = "SADA Extension Team"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+
+dependencies = [
+    "torch",
+    "numpy"
+]
+
+keywords = ["comfyui", "stable-diffusion", "acceleration", "sada", "diffusion", "optimization"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Graphics"
+]
+
+[project.urls]
+Repository = "https://github.com/your-username/sada-extension-for-comfyui"
+"Bug Tracker" = "https://github.com/your-username/sada-extension-for-comfyui/issues"
+"Original Paper" = "https://github.com/Ting-Justin-Jiang/sada-icml"
+
+[tool.setuptools]
+packages = []
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 100
