@@ -291,12 +291,12 @@ class SADAForComfyUI(scripts.Script):
             with gr.Row():
                 acc_start = gr.Slider(
                     label='Start Step', 
-                    minimum=1, maximum=25, step=1, value=15,
+                    minimum=0, maximum=50, step=1, value=15,
                     info="Begin acceleration from this step"
                 )
                 acc_end = gr.Slider(
                     label='End Step', 
-                    minimum=25, maximum=50, step=1, value=45,
+                    minimum=0, maximum=100, step=1, value=45,
                     info="Stop acceleration at this step"
                 )
             

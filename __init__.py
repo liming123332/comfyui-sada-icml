@@ -410,14 +410,14 @@ class SADAAcceleratorNode:
                 "acc_start": ("INT", {
                     "default": 0,   # 从第0步开始，适配少步数模型
                     "min": 0,
-                    "max": 10,
+                    "max": 50,
                     "step": 1,
                     "tooltip": "开始加速的步数"
                 }),
                 "acc_end": ("INT", {
                     "default": 8,   # 到第8步结束，适合9步模型
                     "min": 1,
-                    "max": 15,
+                    "max": 100,
                     "step": 1,
                     "tooltip": "结束加速的步数"
                 }),
@@ -528,8 +528,8 @@ class SADAPresetNode:
             },
             "optional": {
                 "custom_skip_ratio": ("FLOAT", {"default": 0.4, "min": 0.05, "max": 0.4, "step": 0.05}),
-                "custom_acc_start": ("INT", {"default": 1, "min": 1, "max": 25, "step": 1}),
-                "custom_acc_end": ("INT", {"default": 50, "min": 25, "max": 50, "step": 1}),
+                "custom_acc_start": ("INT", {"default": 1, "min": 1, "max": 50, "step": 1}),
+                "custom_acc_end": ("INT", {"default": 50, "min": 25, "max": 100, "step": 1}),
                 "custom_early_exit_threshold": ("FLOAT", {"default": 0.05, "min": 0.005, "max": 0.05, "step": 0.005}),
                 "custom_stability_threshold": ("FLOAT", {"default": 0.05, "min": 0.01, "max": 0.1, "step": 0.01})
             }
