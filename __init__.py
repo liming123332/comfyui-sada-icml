@@ -112,10 +112,9 @@ class SADAStepSkipper:
             return False
 
         # 连续跳过限制（对少步数模型放宽）
+        max_consecutive_skips = max(1, math.ceil(self.skip_ratio * 10))
         if total_steps <= 15:
-            max_consecutive_skips = 4  # 允许更多连续跳过
-        else:
-            max_consecutive_skips = 2
+            max_consecutive_skips = max(2, max_consecutive_skips + 1)
 
         if self.skip_count >= max_consecutive_skips:
             self.skip_count = 0
@@ -143,7 +142,9 @@ class SADAStepSkipper:
                     else:
                         adjusted_threshold = self.stability_threshold
 
-                    if similarity > (1.0 - adjusted_threshold):
+                    # skip_ratio 同时控制跳步爆发长度与触发概率
+                    skip_chance = min(0.95, max(0.05, self.skip_ratio))
+                    if similarity > (1.0 - adjusted_threshold) and torch.rand(1).item() < skip_chance:
                         self.skip_count += 1
                         return True
 

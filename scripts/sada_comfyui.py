@@ -104,7 +104,8 @@ class SADAStepSkipper:
             return False
             
         # Consecutive skip limit
-        if self.skip_count >= 2:
+        max_consecutive_skips = max(1, math.ceil(self.skip_ratio * 10))
+        if self.skip_count >= max_consecutive_skips:
             self.skip_count = 0
             return False
             
@@ -124,7 +125,10 @@ class SADAStepSkipper:
                         prev_flat.unsqueeze(0)
                     ).item()
                     
-                    if similarity > (1.0 - self.stability_threshold):
+                    # skip_ratio scales both probability and the burst length of skips
+                    skip_chance = min(0.95, max(0.05, self.skip_ratio))
+                    
+                    if similarity > (1.0 - self.stability_threshold) and torch.rand(1).item() < skip_chance:
                         self.skip_count += 1
                         _sada_state['total_skips'] += 1
                         return True
@@ -390,4 +394,3 @@ class SADAForComfyUI(scripts.Script):
             cleanup_sada_patches()
         
         return
-
