@@ -100,10 +100,12 @@ def safe_tensor_to_float(tensor):
 
 class SADAStepSkipper:
     """Implements step skipping with clean logging."""
-    def __init__(self, skip_ratio, acc_range, stability_threshold=0.05):
+    def __init__(self, skip_ratio, acc_range, stability_threshold=0.05, similarity_sample_size=65536, similarity_stride=2):
         self.skip_ratio = skip_ratio
         self.acc_range = acc_range
         self.stability_threshold = stability_threshold
+        self.similarity_sample_size = similarity_sample_size
+        self.similarity_stride = similarity_stride
         self.reset()
         
     def should_skip_step(self, current_features, timestep_tensor, total_steps):
@@ -142,23 +144,33 @@ class SADAStepSkipper:
         # Feature stability check
         if self.prev_features is not None:
             try:
-                current_flat = current_features.flatten()
-                prev_flat = self.prev_features.flatten()
-                
+                # Downsample features to reduce overhead while keeping spatial diversity
+                if current_features.dim() >= 2:
+                    current_flat = current_features.flatten()
+                    prev_flat = self.prev_features.flatten()
+                else:
+                    current_flat = current_features
+                    prev_flat = self.prev_features
+
                 min_size = min(len(current_flat), len(prev_flat))
                 if min_size > 0:
-                    current_flat = current_flat[:min_size]
-                    prev_flat = prev_flat[:min_size]
-                    
+                    step = max(1, self.similarity_stride)
+                    limited_size = min(self.similarity_sample_size, min_size)
+                    indices = torch.arange(0, min_size, step, device=current_flat.device)[:limited_size]
+
+                    current_sample = current_flat[indices]
+                    prev_sample = prev_flat[indices]
+                    current_sample = current_sample - current_sample.mean()
+                    prev_sample = prev_sample - prev_sample.mean()
                     similarity = F.cosine_similarity(
-                        current_flat.unsqueeze(0), 
-                        prev_flat.unsqueeze(0)
+                        current_sample.unsqueeze(0), 
+                        prev_sample.unsqueeze(0)
                     ).item()
                     
                     # skip_ratio scales both probability and the burst length of skips
                     skip_chance = min(0.95, max(0.05, self.skip_ratio))
                     
-                    if similarity > (1.0 - self.stability_threshold) and torch.rand(1).item() < skip_chance:
+                    if similarity > (1.0 - self.stability_threshold) and torch.rand(1, device=current_features.device).item() < skip_chance:
                         self.skip_count += 1
                         _sada_state['total_skips'] += 1
                         return True
@@ -187,11 +199,22 @@ def cleanup_sada_patches():
         if total > 0:
             print(f"SADA: Completed - skipped {skipped}/{total} steps ({skipped/total*100:.1f}%)")
     
-    if _sada_state['patched_unet'] is not None and _sada_state['original_apply_model'] is not None:
+    if _sada_state['patched_unet'] is not None:
         try:
-            _sada_state['patched_unet'].model.apply_model = _sada_state['original_apply_model']
+            _sada_state['patched_unet'].set_model_output_block_patch(None)
+            if _sada_state['original_apply_model'] is not None:
+                _sada_state['patched_unet'].model.apply_model = _sada_state['original_apply_model']
+            if hasattr(_sada_state['patched_unet'].model.apply_model, '_last_result'):
+                delattr(_sada_state['patched_unet'].model.apply_model, '_last_result')
         except Exception as e:
             print(f"SADA: Cleanup error: {e}")
+    
+    # Clear cached results to avoid reusing stale data between runs
+    if _sada_state.get('original_apply_model') is not None and hasattr(_sada_state['original_apply_model'], '_last_result'):
+        try:
+            delattr(_sada_state['original_apply_model'], '_last_result')
+        except Exception:
+            pass
     
     # Reset all state
     _sada_state.update({
@@ -244,14 +267,16 @@ def apply_sada_acceleration(unet_patcher, skip_ratio, acc_range, early_exit_thre
             try:
                 if len(h.shape) == 4:  # Conv layers
                     B, C, H, W = h.shape
-                    feature_magnitude = torch.mean(torch.abs(h)).item()
-                    
-                    if feature_magnitude < early_exit_threshold:
-                        range_progress = (current_step - acc_start) / max(1, acc_end - acc_start)
-                        scale_factor = 0.75 + 0.15 * range_progress
+                    # Check every few steps to reduce overhead
+                    if (current_step - acc_start) % 2 == 0:
+                        feature_magnitude = torch.mean(torch.abs(h)).item()
                         
-                        h_small = F.interpolate(h, scale_factor=scale_factor, mode='bilinear', align_corners=False)
-                        h = F.interpolate(h_small, size=(H, W), mode='bilinear', align_corners=False)
+                        if feature_magnitude < early_exit_threshold:
+                            range_progress = (current_step - acc_start) / max(1, acc_end - acc_start)
+                            scale_factor = 0.75 + 0.15 * range_progress
+                            
+                            h_small = F.interpolate(h, scale_factor=scale_factor, mode='bilinear', align_corners=False)
+                            h = F.interpolate(h_small, size=(H, W), mode='bilinear', align_corners=False)
                 
                 elif len(h.shape) == 3:  # Attention layers
                     B, N, C = h.shape
@@ -261,8 +286,11 @@ def apply_sada_acceleration(unet_patcher, skip_ratio, acc_range, early_exit_thre
                         keep_tokens = max(64, int(N * keep_ratio))
                         
                         if keep_tokens < N:
+                            # Stratified sampling to avoid low-index bias
                             step_size = max(1, N // keep_tokens)
-                            indices = torch.arange(0, N, step_size, device=h.device)[:keep_tokens]
+                            offset = (current_step + N) % step_size
+                            indices = torch.arange(offset, offset + keep_tokens * step_size, step_size, device=h.device)
+                            indices = torch.clamp(indices, max=N - 1)
                             h_reduced = h[:, indices, :]
                             
                             h = F.interpolate(
