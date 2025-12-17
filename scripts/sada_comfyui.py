@@ -309,7 +309,7 @@ class SADAForComfyUI(scripts.Script):
             # Model preset selection
             with gr.Row():
                 model_preset = gr.Radio(
-                    choices=["SDXL (Balanced)", "Flux (Aggressive)"],
+                    choices=["SDXL (Balanced)", "Flux (Aggressive)", "Wan Video (Temporal-safe)"],
                     value="SDXL (Balanced)",
                     label="Model Preset",
                     info="Choose preset optimized for your model type"
@@ -357,6 +357,13 @@ class SADAForComfyUI(scripts.Script):
                         acc_end: gr.update(value=35),
                         early_exit_threshold: gr.update(value=0.04)
                     }
+                elif preset_choice == "Wan Video (Temporal-safe)":
+                    return {
+                        skip_ratio: gr.update(value=0.2),
+                        acc_start: gr.update(value=5),
+                        acc_end: gr.update(value=30),
+                        early_exit_threshold: gr.update(value=0.015)
+                    }
                 else:
                     return {
                         skip_ratio: gr.update(),
@@ -384,6 +391,7 @@ class SADAForComfyUI(scripts.Script):
                 <b>🚀 SADA Parameters:</b><br>
                 • <b>🎯 SDXL Balanced:</b> Start=15, Skip=0.2, End=45, Threshold=0.02<br>
                 • <b>⚡ Flux Aggressive:</b> Start=7, Skip=0.3, End=35, Threshold=0.04<br>
+                • <b>🎞️ Wan Video (Temporal-safe):</b> Start=5, Skip=0.2, End=30, Threshold=0.015<br>
                 • <b> Select parameters for your model. If the model reduces the main picture to 8-10 steps, then the initial steps can be reduced to 12. On Flux, you can even reduce it to 5. <br>
                 • <b> Set the final steps +8-10 to your final steps.<br>
                 • <b> For example, AnimagineXL reduces the picture to 13-14 steps, and you can speed it up from step 15. If you draw at 28 steps, then set the final steps to 35-40.
