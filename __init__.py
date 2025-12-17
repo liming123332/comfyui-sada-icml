@@ -249,7 +249,32 @@ class SADAAccelerator:
             # 检查是否在加速范围内
             if acc_start <= current_step <= acc_end and current_accelerator.early_exit_threshold > 0:
                 try:
-                    if len(h.shape) == 4:  # 卷积层
+                    if len(h.shape) == 5:  # 视频/3D卷积层 (B, C, F, H, W) 或 (B, F, C, H, W)
+                        # 假设标准布局 (B, C, F, H, W)
+                        # 如果是 Wan 2.1 或其他视频模型
+                        feature_magnitude = torch.mean(torch.abs(h)).item()
+                        
+                        # 同样使用降低的阈值
+                        effective_threshold = current_accelerator.early_exit_threshold * 0.01
+
+                        if feature_magnitude < effective_threshold:
+                            range_progress = (current_step - acc_start) / max(1, acc_end - acc_start)
+                            scale_factor = 0.75 + 0.15 * range_progress
+                            
+                            # 仅在空间维度(H, W)上进行压缩，保留时间维度(F)
+                            # F.interpolate for 5D input: (depth, height, width)
+                            # h.shape: B, C, F, H, W
+                            B, C, F, H, W = h.shape
+                            
+                            new_H = int(H * scale_factor)
+                            new_W = int(W * scale_factor)
+                            
+                            # 使用 trilinear 插值
+                            h_small = F.interpolate(h, size=(F, new_H, new_W), mode='trilinear', align_corners=False)
+                            h = F.interpolate(h_small, size=(F, H, W), mode='trilinear', align_corners=False)
+                            print(f"[SADA] 🗜️ 视频特征压缩: scale_factor={scale_factor:.3f}, 步骤={current_step}")
+
+                    elif len(h.shape) == 4:  # 卷积层
                         B, C, H, W = h.shape
                         feature_magnitude = torch.mean(torch.abs(h)).item()
 
@@ -401,6 +426,10 @@ class SADAAcceleratorNode:
         return {
             "required": {
                 "model": ("MODEL",),
+                "preset": (["Manual", "SDXL (Balanced)", "Flux (Aggressive)", "Wan Video (Temporal-safe)"], {
+                    "default": "Manual",
+                    "tooltip": "预设配置 (选择Manual以外的选项将覆盖下方参数)"
+                }),
                 "skip_ratio": ("FLOAT", {
                     "default": 0.3,  # 提高跳过率以获得更明显的加速
                     "min": 0.05,
@@ -461,10 +490,30 @@ class SADAAcceleratorNode:
         # 从而触发内部的自动刷新计数器
         return float("NaN")
 
-    def apply_sada_acceleration(self, model, skip_ratio, acc_start, acc_end, early_exit_threshold, stability_threshold, enable_acceleration=True, force_refresh=0):
+    def apply_sada_acceleration(self, model, preset, skip_ratio, acc_start, acc_end, early_exit_threshold, stability_threshold, enable_acceleration=True, force_refresh=0):
         """应用SADA加速"""
         if not enable_acceleration:
             return model, "SADA加速已禁用"
+
+        # 应用预设配置
+        if preset != "Manual":
+            print(f"[SADA] 🔄 应用预设: {preset}")
+            if preset == "SDXL (Balanced)":
+                skip_ratio = 0.2
+                acc_start = 15
+                acc_end = 45
+                early_exit_threshold = 0.02
+            elif preset == "Flux (Aggressive)":
+                skip_ratio = 0.3
+                acc_start = 7
+                acc_end = 35
+                early_exit_threshold = 0.04
+            elif preset == "Wan Video (Temporal-safe)":
+                skip_ratio = 0.2
+                acc_start = 5
+                acc_end = 30
+                early_exit_threshold = 0.015
+                # 对于视频模型，可能需要调整稳定性阈值，这里保持默认或稍微放宽
 
         try:
             # 强制重置所有SADA状态，防止缓存干扰
