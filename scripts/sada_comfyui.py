@@ -47,6 +47,36 @@ class SADAStepCounter:
         self.step_history = []
         self.sigma_history = []
 
+def derive_total_steps(p):
+    """Derive total sampling steps, considering potential multi-pass workflows."""
+    base_steps = int(getattr(p, 'steps', 0) or 0)
+    total_steps = max(1, base_steps)
+
+    if getattr(p, 'enable_hr', False):
+        hr_steps = getattr(p, 'hr_second_pass_steps', 0)
+        if hr_steps is None or hr_steps == 0:
+            hr_steps = base_steps
+        try:
+            hr_steps = int(hr_steps)
+        except (TypeError, ValueError):
+            hr_steps = base_steps
+        total_steps += max(0, hr_steps)
+
+    return total_steps
+
+def normalize_acc_range(acc_start, acc_end, total_steps):
+    """Clamp and sort acceleration range within total steps."""
+    requested = (int(acc_start), int(acc_end))
+    start, end = requested
+
+    start = max(0, min(start, total_steps))
+    end = max(0, min(end, total_steps))
+
+    if start > end:
+        start, end = end, start
+
+    return (start, end), requested
+
 def safe_tensor_to_float(tensor):
     """Safely convert tensor to float, handling multiple elements."""
     try:
@@ -341,6 +371,13 @@ class SADAForComfyUI(scripts.Script):
                 inputs=[model_preset],
                 outputs=[skip_ratio, acc_start, acc_end, early_exit_threshold]
             )
+
+            gr.Markdown(
+                value=(
+                    "ℹ️ 当前总步数会在运行时根据采样与高分辨率流程推导。"
+                    "结束步数应不超过采样步数。"
+                )
+            )
             
             gr.HTML("""
             <div style="background-color: #e8f4fd; padding: 12px; border-radius: 8px; border: 1px solid #bee5eb;">
@@ -364,8 +401,18 @@ class SADAForComfyUI(scripts.Script):
         if not sada_enabled:
             return
         
-        total_steps = getattr(p, 'steps', 20)
-        acc_range = (int(acc_start), int(acc_end))
+        total_steps = derive_total_steps(p)
+        acc_range, requested_range = normalize_acc_range(acc_start, acc_end, total_steps)
+        range_adjusted = acc_range != requested_range
+
+        if range_adjusted:
+            print(
+                f"SADA: Acceleration range adjusted to {acc_range[0]}-{acc_range[1]} "
+                f"(requested {requested_range[0]}-{requested_range[1]}, total steps {total_steps})"
+            )
+
+        if not hasattr(p, 'extra_generation_params') or p.extra_generation_params is None:
+            p.extra_generation_params = {}
         
         try:
             unet = p.sd_model.forge_objects.unet
@@ -385,10 +432,15 @@ class SADAForComfyUI(scripts.Script):
                 'SADA_v4': True,
                 'SADA_preset': model_preset,
                 'SADA_skip': skip_ratio,
-                'SADA_range': f"{acc_start}-{acc_end}",
-                'SADA_threshold': early_exit_threshold
+                'SADA_range': f"{acc_range[0]}-{acc_range[1]}",
+                'SADA_threshold': early_exit_threshold,
+                'SADA_total_steps': total_steps,
+                'SADA_range_requested': f"{requested_range[0]}-{requested_range[1]}"
             })
-            
+
+            if range_adjusted:
+                p.extra_generation_params['SADA_range_adjusted'] = True
+        
         except Exception as e:
             print(f"SADA: Failed to apply: {e}")
             cleanup_sada_patches()
